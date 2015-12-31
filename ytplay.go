@@ -9,7 +9,12 @@ import (
 	"os/exec"
 )
 
-func readInput(c chan<- string) {
+type streamBuffer struct {
+	stream io.ReadCloser
+	url    string
+}
+
+func reader(c chan<- string) {
 	defer close(c)
 	stdin := bufio.NewScanner(os.Stdin)
 	for stdin.Scan() {
@@ -23,7 +28,7 @@ func readInput(c chan<- string) {
 	}
 }
 
-func stream(in <-chan string, out chan<- io.ReadCloser) {
+func bufferer(in <-chan string, out chan<- streamBuffer) {
 	defer close(out)
 	for video := range in {
 		cmd := exec.Command("youtube-dl", "-q", "-o", "-", video)
@@ -32,25 +37,26 @@ func stream(in <-chan string, out chan<- io.ReadCloser) {
 			log.Print(err)
 			break
 		}
-		log.Printf("Streaming %s", video)
+		log.Printf("Buffering %s", video)
 		cmd.Start()
-		out <- stream
+		out <- streamBuffer{stream, video}
 	}
 }
 
-func proxy(streams <-chan io.ReadCloser) {
+func player(streams <-chan streamBuffer) {
 	for stream := range streams {
 		cmd := exec.Command("mpv", "--no-terminal", "--no-video", "-")
-		cmd.Stdin = stream
+		cmd.Stdin = stream.stream
+		log.Printf("Playing %s", stream.url)
 		cmd.Run()
 	}
 }
 
 func main() {
 	videos := make(chan string)
-	streams := make(chan io.ReadCloser)
+	streams := make(chan streamBuffer)
 
-	go readInput(videos)
-	go stream(videos, streams)
-	proxy(streams)
+	go reader(videos)
+	go bufferer(videos, streams)
+	player(streams)
 }
