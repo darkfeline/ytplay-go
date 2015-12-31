@@ -14,6 +14,10 @@ type streamBuffer struct {
 	url    string
 }
 
+func newStreamBuffer(stream io.ReadCloser, url string) *streamBuffer {
+	return &streamBuffer{stream, url}
+}
+
 func reader(c chan<- string) {
 	defer close(c)
 	stdin := bufio.NewScanner(os.Stdin)
@@ -28,7 +32,7 @@ func reader(c chan<- string) {
 	}
 }
 
-func bufferer(in <-chan string, out chan<- streamBuffer) {
+func bufferer(in <-chan string, out chan<- *streamBuffer) {
 	defer close(out)
 	for video := range in {
 		cmd := exec.Command("youtube-dl", "-q", "-o", "-", video)
@@ -39,11 +43,11 @@ func bufferer(in <-chan string, out chan<- streamBuffer) {
 		}
 		log.Printf("Buffering %s", video)
 		cmd.Start()
-		out <- streamBuffer{stream, video}
+		out <- newStreamBuffer(stream, video)
 	}
 }
 
-func player(streams <-chan streamBuffer) {
+func player(streams <-chan *streamBuffer) {
 	for stream := range streams {
 		cmd := exec.Command("mpv", "--no-terminal", "--no-video", "-")
 		cmd.Stdin = stream.stream
@@ -54,7 +58,7 @@ func player(streams <-chan streamBuffer) {
 
 func main() {
 	videos := make(chan string)
-	streams := make(chan streamBuffer)
+	streams := make(chan *streamBuffer)
 
 	go reader(videos)
 	go bufferer(videos, streams)
