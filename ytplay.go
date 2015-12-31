@@ -19,7 +19,7 @@ func readInput(c chan<- string) {
 		c <- video
 	}
 	if err := stdin.Err(); err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 
@@ -29,7 +29,8 @@ func stream(in <-chan string, out chan<- io.ReadCloser) {
 		cmd := exec.Command("youtube-dl", "-q", "-o", "-", video)
 		stream, err := cmd.StdoutPipe()
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			break
 		}
 		log.Printf("Streaming %s", video)
 		cmd.Start()
