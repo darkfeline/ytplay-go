@@ -18,6 +18,7 @@ func newStreamBuffer(stream io.ReadCloser, url string) *streamBuffer {
 	return &streamBuffer{stream, url}
 }
 
+// Read input URLS from stdin.
 func reader(c chan<- string) {
 	defer close(c)
 	stdin := bufio.NewScanner(os.Stdin)
@@ -32,6 +33,7 @@ func reader(c chan<- string) {
 	}
 }
 
+// Buffer video streams for input URLs.
 func bufferer(in <-chan string, out chan<- *streamBuffer) {
 	defer close(out)
 	for video := range in {
@@ -47,6 +49,7 @@ func bufferer(in <-chan string, out chan<- *streamBuffer) {
 	}
 }
 
+// Play buffered streams one by one as they come in.
 func player(streams <-chan *streamBuffer) {
 	for stream := range streams {
 		cmd := exec.Command("mpv", "--no-terminal", "--no-video", "-")
