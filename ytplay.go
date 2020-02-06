@@ -172,7 +172,7 @@ func (m *streamManager) addStream(ctx context.Context, url string) (string, erro
 	cmd.Stdout = w
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		b.Close()
+		w.Close()
 		return "", err
 	}
 	log.Printf("Started youtube-dl for %s to %s", url, path)
