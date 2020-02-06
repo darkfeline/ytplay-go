@@ -81,8 +81,8 @@ type mpvServer struct {
 
 func newMPVServer(socket string, file string) (*mpvServer, error) {
 	args := []string{"mpv", "--no-config", "--no-terminal", "--force-window=immediate",
-		"--cache=yes", "--cache-secs=600",
-		"--keep-open=yes", "--input-ipc-server=" + socket, file}
+		"--cache=yes", "--cache-secs=600", "--keep-open=yes",
+		"--input-ipc-server=" + socket, file}
 	log.Printf("Starting mpv with %v", args)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stderr = os.Stderr
@@ -148,6 +148,9 @@ func bufferURLs(ctx context.Context, m *streamManager, r io.Reader, files chan<-
 	return scanner.Err()
 }
 
+// streamManager manages FIFOs created in a temporary directory and
+// the streaming processes that fill the buffers feeding the FIFOs.
+// Currently, this does not clean up the FIFOs, but does clean up the processes.
 type streamManager struct {
 	tmpdir string
 	last   int
@@ -160,13 +163,13 @@ func (m *streamManager) Wait() {
 
 func (m *streamManager) addStream(ctx context.Context, url string) (string, error) {
 	path := m.nextFIFO()
-	b, err := newBufferedFIFO(path)
+	w, err := newBufferedFIFO(path)
 	if err != nil {
 		return "", err
 	}
 	// TODO: Clean up FIFOs somewhere.
 	cmd := exec.Command("youtube-dl", "-q", "-o", "-", url)
-	cmd.Stdout = b
+	cmd.Stdout = w
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		b.Close()
@@ -178,7 +181,7 @@ func (m *streamManager) addStream(ctx context.Context, url string) (string, erro
 	go func() {
 		_ = cmd.Wait()
 		log.Printf("youtube-dl for %s exited", url)
-		_ = b.Close()
+		_ = w.Close()
 		close(done)
 		m.wg.Done()
 	}()

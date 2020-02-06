@@ -9,11 +9,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// bufferedFIFO is a buffered FIFO.
+// bufferedFIFO is a buffered FIFO for reading.
 // This is needed because mpv needs a path to load.
 // mpv also does not do prefetch well, so passing a FIFO
 // directly between mpv and youtube-dl means that youtube-dl will only
-// start buffering once mpv gets to it.
+// start buffering once mpv gets to it, so we have to do the buffering.
 type bufferedFIFO struct {
 	pw *io.PipeWriter
 	bw *bufio.Writer
