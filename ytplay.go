@@ -59,7 +59,7 @@ func innerMain() error {
 		defer c.Close()
 
 		for f := range files {
-			log.Printf("Appending mpv file %s", f)
+			log.Printf("Appending %s to mpv playlist", f)
 			c.appendFile(f)
 		}
 	}()
