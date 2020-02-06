@@ -137,15 +137,22 @@ func bufferURLs(ctx context.Context, m *streamManager, r io.Reader, files chan<-
 		url := scanner.Text()
 		fmt.Println(url) // TODO: factor this out
 		log.Printf("Buffering stream %s", url)
-		path, err := m.addStream(ctx, url)
-		if err != nil {
+		if err := bufferURL(ctx, m, url, files); err != nil {
 			log.Print(err)
 			continue
 		}
-		log.Printf("Got streaming FIFO %s for %s", path, url)
-		files <- path
 	}
 	return scanner.Err()
+}
+
+func bufferURL(ctx context.Context, m *streamManager, url string, files chan<- string) error {
+	path, err := m.addStream(ctx, url)
+	if err != nil {
+		return err
+	}
+	log.Printf("Got streaming FIFO %s for %s", path, url)
+	files <- path
+	return nil
 }
 
 // streamManager manages FIFOs created in a temporary directory and
