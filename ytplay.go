@@ -2,68 +2,89 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
+	"sync"
+
+	"golang.org/x/sys/unix"
 )
 
-type streamBuffer struct {
-	stream io.ReadCloser
-	url    string
-}
-
-func newStreamBuffer(stream io.ReadCloser, url string) *streamBuffer {
-	return &streamBuffer{stream, url}
-}
-
-// Read input URLS from stdin.
-func reader(c chan<- string) {
-	defer close(c)
-	stdin := bufio.NewScanner(os.Stdin)
-	for stdin.Scan() {
-		video := stdin.Text()
-		fmt.Println(video)
-		log.Printf("Read %s", video)
-		c <- video
-	}
-	if err := stdin.Err(); err != nil {
-		log.Print(err)
-	}
-}
-
-// Buffer video streams for input URLs.
-func bufferer(in <-chan string, out chan<- *streamBuffer) {
-	defer close(out)
-	for video := range in {
-		cmd := exec.Command("youtube-dl", "-q", "-o", "-", video)
-		stream, err := cmd.StdoutPipe()
-		if err != nil {
-			log.Print(err)
-			break
-		}
-		log.Printf("Buffering %s", video)
-		cmd.Start()
-		out <- newStreamBuffer(stream, video)
-	}
-}
-
-// Play buffered streams one by one as they come in.
-func player(streams <-chan *streamBuffer) {
-	for stream := range streams {
-		cmd := exec.Command("mpv", "--no-terminal", "--no-video", "-")
-		cmd.Stdin = stream.stream
-		log.Printf("Playing %s", stream.url)
-		cmd.Run()
-	}
-}
+var (
+	video = flag.Bool("video", false, "Enable video")
+)
 
 func main() {
-	videos := make(chan string)
-	streams := make(chan *streamBuffer)
+	flag.Parse()
+	streams := make(chan io.Reader, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			url := scanner.Text()
+			fmt.Println(url)
+			r, err := bufferStream(ctx, url)
+			if err != nil {
+				log.Print(err)
+				continue
+			}
+			streams <- r
+		}
+		if err := scanner.Err(); err != nil {
+			log.Print(err)
+		}
+		close(streams)
+		wg.Done()
+	}()
+	go func() {
+		for r := range streams {
+			playStream(r)
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+}
 
-	go reader(videos)
-	go bufferer(videos, streams)
-	player(streams)
+func bufferStream(ctx context.Context, url string) (io.Reader, error) {
+	cmd := exec.Command("youtube-dl", "-q", "-o", "-", url)
+	cmd.Stderr = os.Stderr
+	r, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = cmd.Process.Signal(unix.SIGTERM)
+		case <-done:
+		}
+	}()
+	return r, nil
+}
+
+func playStream(r io.Reader) {
+	var cmd *exec.Cmd
+	if *video {
+		cmd = exec.Command("mpv", "--no-terminal", "-")
+
+	} else {
+		cmd = exec.Command("mpv", "--no-terminal", "--no-video", "-")
+	}
+	cmd.Stdin = r
+	_ = cmd.Run()
 }
