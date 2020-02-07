@@ -44,7 +44,7 @@ func newBufferedFIFO(path string) (*bufferedFIFO, error) {
 	b := &bufferedFIFO{
 		pw: w,
 		pr: r,
-		bw: bufio.NewWriter(w),
+		bw: bufio.NewWriterSize(w, 10*(1<<20)),
 	}
 	go func() {
 		f, err := os.OpenFile(path, os.O_WRONLY, 0666)
