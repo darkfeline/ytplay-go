@@ -8,13 +8,15 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
 
 type mpvServer struct {
-	cmd  *exec.Cmd
-	wait chan struct{}
+	cmd      *exec.Cmd
+	wait     chan struct{}
+	waitOnce sync.Once
 }
 
 func newMPVServer(socket string, file string) (*mpvServer, error) {
@@ -31,18 +33,24 @@ func newMPVServer(socket string, file string) (*mpvServer, error) {
 		cmd:  cmd,
 		wait: make(chan struct{}),
 	}
-	go func() {
-		_ = s.cmd.Wait()
-		log.Printf("mpv exited")
-		close(s.wait)
-	}()
 	return s, nil
 }
 
-func (s *mpvServer) Close() error {
+func (s *mpvServer) Terminate() {
+	// Not race safe.
+	if _, ok := <-s.wait; ok {
+		return
+	}
 	_ = s.cmd.Process.Signal(unix.SIGTERM)
+}
+
+func (s *mpvServer) Wait() {
+	s.waitOnce.Do(func() {
+		_ = s.cmd.Wait()
+		log.Printf("mpv exited")
+		close(s.wait)
+	})
 	<-s.wait
-	return nil
 }
 
 type mpvClient struct {
@@ -59,10 +67,12 @@ func newMPVClient(socket string) (*mpvClient, error) {
 	}, nil
 }
 
-func (c *mpvClient) appendFile(f string) {
+// appendFile appends a file to the mpv process's playlist.
+func (c *mpvClient) appendFile(f string) error {
 	b := []byte(fmt.Sprintf(`{"command": ["loadfile", "%s", "append-play"]}
 `, f))
-	_, _ = c.Conn.Write(b)
+	_, err := c.Conn.Write(b)
+	return err
 }
 
 func (c *mpvClient) handleOutput() {

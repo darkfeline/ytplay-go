@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 
@@ -16,6 +17,7 @@ import (
 // start buffering once mpv gets to it, so we have to do the buffering.
 type bufferedFIFO struct {
 	pw *io.PipeWriter
+	pr *io.PipeReader
 	bw *bufio.Writer
 }
 
@@ -28,6 +30,12 @@ func (b *bufferedFIFO) Close() error {
 	return b.pw.Close()
 }
 
+// Drain unceremoniously drains the FIFO.
+// Used to unblock stuff when exiting.
+func (b *bufferedFIFO) Drain() {
+	io.Copy(ioutil.Discard, b.pr)
+}
+
 func newBufferedFIFO(path string) (*bufferedFIFO, error) {
 	if err := unix.Mkfifo(path, 0666); err != nil {
 		return nil, err
@@ -35,6 +43,7 @@ func newBufferedFIFO(path string) (*bufferedFIFO, error) {
 	r, w := io.Pipe()
 	b := &bufferedFIFO{
 		pw: w,
+		pr: r,
 		bw: bufio.NewWriter(w),
 	}
 	go func() {
